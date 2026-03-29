@@ -29,7 +29,7 @@ def griddata(known_points, known_values, interp_ranges):
     starts = np.real(interp_ranges_arr[:, 0])
     stops = np.real(interp_ranges_arr[:, 1])
     ranges = stops - starts
-    steps = interp_ranges_arr[:, 2].astype(np.complex)
+    steps = interp_ranges_arr[:, 2].astype(complex)
 
     real_steps = np.imag(steps) == 0
     imag_steps = np.imag(steps) != 0
@@ -57,7 +57,7 @@ def griddata(known_points, known_values, interp_ranges):
         else:
             step_sizes[i] = 1
 
-    interp_values_shape = np.floor(output_shape).astype(np.int)
+    interp_values_shape = np.floor(output_shape).astype(int)
     interp_values = np.zeros(interp_values_shape, dtype=np.double)
 
     known_points_ijk = _xyz_to_ijk(known_points, starts, step_sizes)
