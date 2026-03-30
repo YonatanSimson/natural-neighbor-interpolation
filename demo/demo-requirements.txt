@@ -1,3 +1,4 @@
-matplotlib==2.0.2
-numpy
-scipy==0.19.1
+# Versions with binary wheels on Python 3.10+ (replacing matplotlib 2.x / scipy 0.19).
+matplotlib>=3.7,<4
+numpy>=1.24,<3
+scipy>=1.10,<2

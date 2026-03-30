@@ -1,3 +1,45 @@
 [build-system]
 requires = ["setuptools", "numpy>=1.13"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "naturalneighbor"
+license = "MIT"
+dynamic = [
+    "version",
+    "description",
+    "readme",
+    "dependencies",
+    "authors",
+    "keywords",
+    "classifiers",
+]
+
+[project.urls]
+Homepage = "https://github.com/innolitics/natural-neighbor-interpolation"
+
+# Optional CUDA extension (ccudanaturalneighbor): NVIDIA CUDA Toolkit 12.4-13.x with nvcc;
+# set CUDA_HOME or install under /usr/local/cuda so setup.py can detect the toolkit.
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+extend-exclude = "/(\\.tox|\\.eggs|build)/"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip_glob = [".tox/*", "build/*", "*.egg-info/*"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = "cnaturalneighbor"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ccudanaturalneighbor"
+ignore_missing_imports = true

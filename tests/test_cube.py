@@ -1,29 +1,36 @@
 import math
 
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 
 from naturalneighbor import griddata
 
 
 def known_cube(side_length=1):
-    return np.array([
-        [0, 0, 0],
-        [1, 0, 0],
-        [0, 1, 0],
-        [0, 0, 1],
-        [1, 1, 0],
-        [1, 0, 1],
-        [0, 1, 1],
-        [1, 1, 1],
-    ], dtype=np.float) * side_length
+    corners = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 1, 0],
+            [1, 0, 1],
+            [0, 1, 1],
+            [1, 1, 1],
+        ],
+        dtype=np.float64,
+    )
+    return corners * side_length
 
 
-@pytest.mark.parametrize("grid_ranges", [
-    [[0, 1, 2j], [0, 1, 2j], [0, 1, 2j]],
-    [[0, 1, 4j], [0, 1, 7j], [0, 1, 10j]],
-])
+@pytest.mark.parametrize(
+    "grid_ranges",
+    [
+        [[0, 1, 2j], [0, 1, 2j], [0, 1, 2j]],
+        [[0, 1, 4j], [0, 1, 7j], [0, 1, 10j]],
+    ],
+)
 def test_interp_on_known_points(grid_ranges):
     known_points = known_cube()
     known_values = np.random.rand(8)
@@ -73,11 +80,7 @@ def test_interp_between_cube_edges():
         [0, 1, num_points * 1j],
     ]
 
-    actual_interp_values = griddata(
-        known_points,
-        known_values,
-        interp_grid_ranges
-    )
+    actual_interp_values = griddata(known_points, known_values, interp_grid_ranges)
 
     expected_interp_values = np.linspace(0, 1, num_points)
 
@@ -100,9 +103,9 @@ def test_cube_symmetrical(num_points):
 
     middle = int(math.floor(num_points / 2))
     quadrant_1 = interp_values[0:middle, 0:middle, :]
-    quadrant_2 = interp_values[0:middle, :-middle - 1:-1, :]
-    quadrant_3 = interp_values[:-middle - 1:-1, 0:middle, :]
-    quadrant_4 = interp_values[:-middle - 1:-1, :-middle - 1:-1, :]
+    quadrant_2 = interp_values[0:middle, : -middle - 1 : -1, :]
+    quadrant_3 = interp_values[: -middle - 1 : -1, 0:middle, :]
+    quadrant_4 = interp_values[: -middle - 1 : -1, : -middle - 1 : -1, :]
 
     assert_allclose(quadrant_1, quadrant_2, rtol=0, atol=1e-9)
     assert_allclose(quadrant_1, quadrant_3, rtol=0, atol=1e-9)

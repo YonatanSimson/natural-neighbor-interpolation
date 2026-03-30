@@ -14,15 +14,53 @@ See https://doi.org/10.1109/TVCG.2006.27 for details.
 Installation
 ------------
 
+CPU-only (pre-built wheels from PyPI, when available):
+
 .. code-block:: bash
 
     pip install naturalneighbor
 
+CUDA acceleration (optional)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The optional ``ccudanaturalneighbor`` extension is **not** included in typical
+PyPI wheels.  To build it locally you need the **NVIDIA CUDA Toolkit** (12.4
+through 13.x) with ``nvcc`` available at build time.
+
+1. Install CUDA (e.g. from `NVIDIA CUDA Toolkit <https://developer.nvidia.com/cuda-downloads>`_)
+   and ensure the toolkit is discoverable:
+
+   - Set ``CUDA_HOME`` (or ``CUDA_PATH``) to the toolkit root, **or**
+   - Install under ``/usr/local/cuda`` (symlink or default layout).
+
+2. Install from a **source** checkout or sdist so the build can compile the
+   ``.cu`` file:
+
+   .. code-block:: bash
+
+      git clone https://github.com/innolitics/natural-neighbor-interpolation.git
+      cd natural-neighbor-interpolation
+      pip install .
+
+   If ``nvcc`` is found and the toolkit version is recognized, both
+   ``cnaturalneighbor`` (CPU) and ``ccudanaturalneighbor`` (CUDA) are built.
+   If CUDA is missing, only the CPU extension is built and the package still
+   installs.
+
+3. At runtime, use ``backend="cuda"`` or ``backend="auto"`` in
+   :code:`griddata` (see Usage).  Check :code:`naturalneighbor.CUDA_AVAILABLE`
+   if you need to branch in code.
+
+**Note:** GPU architectures are selected at compile time for common data-center
+and Ada GPUs (e.g. Turing through Ada); see ``setup.py`` for the exact
+``-gencode`` list.  CUDA 13 drops Volta (sm\_70) offline targets; use CUDA 12.x
+if you must build for older GPUs.
+
 Dependencies
 ------------
 
-- Python 3.5+
-- Numpy (has been tested with 1.13+)
+- Python 3.10+
+- Numpy (has been tested with 2.0.0+)
 
 Demonstration
 -------------
@@ -43,7 +81,11 @@ Note that the natural neighbor values usually are extrapolated; they were cut of
 Usage
 -----
 
-This module exposes a single function, :code:`griddata`.
+This module exposes :code:`griddata` and, when the CUDA extension is built,
+:code:`CUDA_AVAILABLE` (boolean).
+
+Pass :code:`backend="cpu"` (default), :code:`backend="cuda"`, or
+:code:`backend="auto"` (use CUDA if the extension is present, otherwise CPU).
 
 The API for :code:`naturalneighbor.griddata` is similar to
 :code:`scipy.interpolate.griddata`.  Unlike Scipy, the third argument is not a

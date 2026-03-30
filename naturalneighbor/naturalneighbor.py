@@ -2,8 +2,13 @@ import numpy as np
 
 import cnaturalneighbor
 
+try:
+    import ccudanaturalneighbor
+except ImportError:
+    ccudanaturalneighbor = None
 
-def griddata(known_points, known_values, interp_ranges):
+
+def griddata(known_points, known_values, interp_ranges, backend="cpu"):
     if known_points.ndim != 2:
         raise ValueError("known_points must be a NxD array with N>0")
 
@@ -20,6 +25,11 @@ def griddata(known_points, known_values, interp_ranges):
 
     if num_known_points != num_known_values:
         raise ValueError("Number of known_points != number of known_values")
+
+    if backend not in ("auto", "cpu", "cuda"):
+        raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
+
+    # 'auto' prefers CUDA when the extension is built; default 'cpu' keeps existing behavior.
 
     interp_ranges_arr = np.array(interp_ranges)
 
@@ -65,11 +75,30 @@ def griddata(known_points, known_values, interp_ranges):
 
     known_values = np.ascontiguousarray(known_values, dtype=np.double)
 
-    cnaturalneighbor.griddata(
-        known_points_ijk,
-        known_values,
-        interp_values,
-    )
+    use_cuda = False
+    if backend == "cuda":
+        if ccudanaturalneighbor is None:
+            raise ImportError(
+                "CUDA backend requested but extension 'ccudanaturalneighbor' is not built or "
+                "failed to import. Install with CUDA toolkit available (CUDA_HOME) or use "
+                "backend='cpu'."
+            )
+        use_cuda = True
+    elif backend == "auto":
+        use_cuda = ccudanaturalneighbor is not None
+
+    if use_cuda:
+        ccudanaturalneighbor.griddata(
+            known_points_ijk,
+            known_values,
+            interp_values,
+        )
+    else:
+        cnaturalneighbor.griddata(
+            known_points_ijk,
+            known_values,
+            interp_values,
+        )
 
     return interp_values
 
