@@ -141,10 +141,11 @@ if __name__ == "__main__":
     )
 
     # Physical staircase: tread widths in [0.5, 3] m (relative), scaled to run_length_m
-    # along +x; variable riser heights (meters). Grid: 0.1 m per index; y,z span 1 m.
+    # along +x; variable riser heights (meters). Grid: 0.1 m per index; y=30 m, z=1 m.
     cell_m = 0.1
     run_length_m = 10.0
-    lateral_width_m = 1.0
+    y_extent_m = 30.0
+    z_extent_m = 1.0
     rng_stair = np.random.default_rng(101)
     tread_widths_m = 0.5 + (3.0 - 0.5) * rng_stair.random(10)
     tread_widths_m[0] = 0.5
@@ -153,9 +154,9 @@ if __name__ == "__main__":
     rise_heights_m = np.array([0.12, 0.08, 0.11, 0.09, 0.13, 0.10, 0.09, 0.12, 0.08, 0.11], dtype=np.float64)
     total_run_m = float(np.sum(tread_widths_m))
     xmax = int(np.ceil(total_run_m / cell_m)) + 1
-    ymax = int(np.ceil(lateral_width_m / cell_m)) + 1
-    zmax = ymax
-    stair_label = "10 steps, {:.0f} m run along x, tread {:.2f}–{:.2f} m, rise {:.2f}–{:.2f} m " "(0.1×index→m)".format(
+    ymax = int(np.ceil(y_extent_m / cell_m)) + 1
+    zmax = int(np.ceil(z_extent_m / cell_m)) + 1
+    stair_label = "10 steps, {:.0f} m run along x\ntread {:.2f}–{:.2f} m\nrise {:.2f}–{:.2f} m " "(0.1×index→m)".format(
         run_length_m,
         float(np.min(tread_widths_m)),
         float(np.max(tread_widths_m)),
@@ -170,7 +171,7 @@ if __name__ == "__main__":
         ymax=ymax,
         zmax=zmax,
         z_slice=zmax // 2,
-        num_known_points=800,
+        num_known_points=1500,
         # imshow uses dim0=vertical, dim1=horizontal; without transpose, long x-run was vertical.
         transpose_slice=True,
     )
