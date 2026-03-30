@@ -13,7 +13,8 @@ module = Extension(
     "cnaturalneighbor",
     include_dirs=[numpy.get_include()],
     library_dirs=["/usr/local/lib"],
-    extra_compile_args=["--std=c++11", "-O3"],
+    extra_compile_args=["--std=c++11", "-O3", "-fopenmp"],
+    extra_link_args=["-fopenmp"],
     sources=[
         "naturalneighbor/cnaturalneighbor.cpp",
     ],

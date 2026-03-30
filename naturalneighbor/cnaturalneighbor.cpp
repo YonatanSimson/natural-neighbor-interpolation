@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <algorithm>
-#include <thread>
+#include <omp.h>
 
 #include "Python.h"
 #include "numpy/arrayobject.h"
@@ -24,12 +24,12 @@ static PyMethodDef module_methods[] = {
     {NULL, NULL, 0, NULL}
 };
 
-/* 
+/*
 The macros below are for backward compatibility with Python 2.
 Here, the functions used to creating and initializing modules
 differ in both their names and their signatures.
 
-Module initialization 
+Module initialization
     2: init<name>, void function (does not return a value)
     3: PyInit_<name>, returns either PyObject/NULL for success/failure
 Module creation
@@ -73,81 +73,6 @@ inline long clamp(long val, long min, long max) {
 }
 
 
-void inner_loop(
-        int thread_number,
-        std::size_t ni,
-        std::size_t nj,
-        std::size_t nk,
-        kdtree::kdtree<double> *tree,
-        double* interp_values_ptr,
-        unsigned long *contribution_counter) {
-
-    for (std::size_t i = 0; i < ni; i++) {
-        for (std::size_t j = 0; j < nj; j++) {
-            for (std::size_t k = 0; k < nk; k++) {
-                auto query_point = Point(i, j, k);
-                auto nearest_known_point = tree->nearest_iterative(query_point);
-
-                double distance_sq_query_to_known = nearest_known_point.distance;
-                int roi_radius = ceil(sqrt(distance_sq_query_to_known));
-
-                // TODO: ask the programming gods for forgiveness, and then
-                // refactor this; this threading model only makes sense for
-                // very specific input shapes
-                std::size_t i_roi_min, i_roi_max;
-                std::size_t i_middle = floor(ni/2);
-                if ((thread_number >> 0) % 2) {
-                    i_roi_min = clamp(i - roi_radius, 0, i_middle);
-                    i_roi_max = clamp(i + roi_radius, 0, i_middle);
-                } else {
-                    i_roi_min = clamp(i - roi_radius, i_middle + 1, ni - 1);
-                    i_roi_max = clamp(i + roi_radius, i_middle + 1, ni - 1);
-                }
-
-                std::size_t j_roi_min, j_roi_max;
-                std::size_t j_middle = floor(nj/2);
-                if ((thread_number >> 1) % 2) {
-                    j_roi_min = clamp(j - roi_radius, 0, j_middle);
-                    j_roi_max = clamp(j + roi_radius, 0, j_middle);
-                } else {
-                    j_roi_min = clamp(j - roi_radius, j_middle + 1, nj - 1);
-                    j_roi_max = clamp(j + roi_radius, j_middle + 1, nj - 1);
-                }
-
-                std::size_t k_roi_min, k_roi_max;
-                std::size_t k_middle = floor(nk/2);
-                if ((thread_number >> 2) % 2) {
-                    k_roi_min = clamp(k - roi_radius, 0, k_middle);
-                    k_roi_max = clamp(k + roi_radius, 0, k_middle);
-                } else {
-                    k_roi_min = clamp(k - roi_radius, k_middle + 1, nk - 1);
-                    k_roi_max = clamp(k + roi_radius, k_middle + 1, nk - 1);
-                }
-
-                for (std::size_t i_roi = i_roi_min; i_roi <= i_roi_max; i_roi++) {
-                    double deltai_2 = (i - i_roi)*(i - i_roi);
-                    std::size_t indice_i_component = nj*nk*i_roi;
-                    for (std::size_t j_roi = j_roi_min; j_roi <= j_roi_max; j_roi++) {
-                        double deltaj_2 = (j - j_roi)*(j - j_roi);
-                        std::size_t indice_j_component = nk*j_roi;
-                        for (std::size_t k_roi = k_roi_min; k_roi <= k_roi_max; k_roi++) {
-                            double deltak_2 = (k - k_roi)*(k - k_roi);
-                            double distance_sq_roi_to_known = deltai_2 + deltaj_2 + deltak_2;
-
-                            if (distance_sq_roi_to_known == 0 || distance_sq_roi_to_known < distance_sq_query_to_known) {
-                                std::size_t indice = indice_i_component + indice_j_component + k_roi;
-                                interp_values_ptr[indice] += nearest_known_point.value;
-                                contribution_counter[indice] += 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-
 static PyObject* cnaturalneighbor_griddata(PyObject* self, PyObject* args) {
     PyArrayObject *known_points_ijk, *known_values, *interp_values;
 
@@ -180,23 +105,72 @@ static PyObject* cnaturalneighbor_griddata(PyObject* self, PyObject* args) {
     }
     tree->build();
 
-    auto contribution_counter = new unsigned long[ni*nj*nk]();
+    std::size_t grid_size = ni * nj * nk;
+    auto contribution_counter = new unsigned long[grid_size]();
 
-    std::vector<std::thread> threads;
-    std::size_t num_threads = 8;  // you can't change this at the moment!
-    for (std::size_t thread_number = 0; thread_number < num_threads; thread_number++) {
-        threads.push_back(std::thread(&inner_loop,
-                thread_number,
-                ni,
-                nj,
-                nk,
-                tree,
-                interp_values_ptr,
-                contribution_counter));
+    int nthreads = 1;
+    #pragma omp parallel
+    { nthreads = omp_get_num_threads(); }
+
+    // Per-thread private accumulators avoid atomic contention entirely.
+    // Each thread writes to its own slice; we sum them in a final reduction.
+    std::vector<double> thread_interp(nthreads * grid_size, 0.0);
+    std::vector<unsigned long> thread_counter(nthreads * grid_size, 0);
+
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        double* my_interp = thread_interp.data() + tid * grid_size;
+        unsigned long* my_counter = thread_counter.data() + tid * grid_size;
+
+        #pragma omp for schedule(dynamic)
+        for (long i = 0; i < (long)ni; i++) {
+            for (long j = 0; j < (long)nj; j++) {
+                for (long k = 0; k < (long)nk; k++) {
+                    auto query_point = Point(i, j, k);
+                    auto nearest_known_point = tree->nearest_iterative(query_point);
+
+                    double distance_sq_query_to_known = nearest_known_point.distance;
+                    int roi_radius = (int)ceil(sqrt(distance_sq_query_to_known));
+
+                    long i_roi_min = clamp(i - roi_radius, 0L, (long)ni - 1);
+                    long i_roi_max = clamp(i + roi_radius, 0L, (long)ni - 1);
+                    long j_roi_min = clamp(j - roi_radius, 0L, (long)nj - 1);
+                    long j_roi_max = clamp(j + roi_radius, 0L, (long)nj - 1);
+                    long k_roi_min = clamp(k - roi_radius, 0L, (long)nk - 1);
+                    long k_roi_max = clamp(k + roi_radius, 0L, (long)nk - 1);
+
+                    for (long i_roi = i_roi_min; i_roi <= i_roi_max; i_roi++) {
+                        double deltai_2 = (double)(i - i_roi)*(i - i_roi);
+                        std::size_t indice_i_component = nj*nk*i_roi;
+                        for (long j_roi = j_roi_min; j_roi <= j_roi_max; j_roi++) {
+                            double deltaj_2 = (double)(j - j_roi)*(j - j_roi);
+                            std::size_t indice_j_component = nk*j_roi;
+                            for (long k_roi = k_roi_min; k_roi <= k_roi_max; k_roi++) {
+                                double deltak_2 = (double)(k - k_roi)*(k - k_roi);
+                                double distance_sq_roi_to_known = deltai_2 + deltaj_2 + deltak_2;
+
+                                if (distance_sq_roi_to_known == 0 || distance_sq_roi_to_known < distance_sq_query_to_known) {
+                                    std::size_t indice = indice_i_component + indice_j_component + k_roi;
+                                    my_interp[indice] += nearest_known_point.value;
+                                    my_counter[indice] += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    for (auto& th : threads) {
-        th.join();
+    // Reduce per-thread results into the output arrays
+    for (int t = 0; t < nthreads; t++) {
+        double* my_interp = thread_interp.data() + t * grid_size;
+        unsigned long* my_counter = thread_counter.data() + t * grid_size;
+        for (std::size_t idx = 0; idx < grid_size; idx++) {
+            interp_values_ptr[idx] += my_interp[idx];
+            contribution_counter[idx] += my_counter[idx];
+        }
     }
 
     for (std::size_t i = 0; i < ni; i++) {
